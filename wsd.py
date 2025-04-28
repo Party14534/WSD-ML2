@@ -1,0 +1,294 @@
+"""
+Zachariah Dellimore V00980652
+
+Using scikit learn I was able to improve upon my decision list classifier
+accuracy by 10-15% and the models performed much better than the most frequent
+sense baseline which was 52.4%
+
+Models used
+Gaussian Naive Bayes
+    Accuracy: 87.3015873015873%
+    Matrix:
+              product | phone |
+            -------------------
+    product |   50   |   12  |
+            -------------------
+    phone   |   4   |   60  |
+
+    It performed the worst of the models used but still performed much better
+    than my decision list classifier and much better than the most frequent
+    sense baseline.
+
+Logisitic Regression
+    Accuracy: 91.26984126984127%
+    Matrix:
+              product | phone |
+            -------------------
+    product |   53   |   10  |
+            -------------------
+    phone   |   1   |   62  |
+
+    Logistic Regression tied the MultiLayer Perceptron in performance but
+    also computed much faster. An accuracy of 91% is much higher than
+    my decision list classifier and is much better than the most frequent sense
+    baseline.
+
+MultiLayer Perceptron
+    Accuracy: 91.26984126984127%
+    Matrix:
+              product | phone |
+            -------------------
+    product |   53   |   10  |
+            -------------------
+    phone   |   1   |   62  |
+
+    The MultiLayer Perceptron tied the Logistic Regression model in accuracy
+    but took longer to compute. The accuracy of the model is much higher than
+    my decision list classifier and performed better than the most frequent
+    sense baseline.
+
+"""
+
+import html.parser
+import copy
+import string
+import sys
+from typing import OrderedDict
+from sklearn import svm
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+import numpy as np
+
+
+class Decision:
+    feature = ""
+    answer = ""
+    liklihood = 0.0
+
+
+# Sentence structure to save important data
+class Sentence:
+    sentence = ""
+    word = ""
+    answer = ""
+
+
+# Parser implementation
+class MyParser(html.parser.HTMLParser):
+    values = []
+
+    def handle_starttag(self, tag, attrs):
+        if valid_tag(tag):
+            if tag == 'answer':
+                self.values.append(tag)
+                self.values.append(attrs[1][1])
+            else:
+                self.values.append(tag)
+
+    def handle_endtag(self, tag):
+        self.values.append(tag)
+
+    def handle_data(self, data):
+        self.values.append(data)
+
+
+sentences = []
+features = OrderedDict()
+feature_count = {}
+words = {}
+answer_count = {}
+glove_dict = {}
+num_answers = 0
+model_type = "NaiveBayes"
+
+
+# Only care about specific tags
+def valid_tag(tag: str):
+    match(tag):
+        case 'answer' | 'instance' | 's' | 'head' | 'context':
+            return True
+
+    return False
+
+
+def parse_glove(glove: str):
+    lines = glove.split('\n')
+
+    for line in lines:
+        words = line.split(' ')
+        nums = []
+        for num in words[1:]:
+            nums.append(float(num))
+
+        glove_dict[words[0]] = nums
+
+
+# Build feature vectors for train and test
+def sentence_to_vec(sentence, glove_dict):
+    words = sentence.lower().split()
+    word_vecs = [glove_dict[word] for word in words if word in glove_dict]
+
+    if not word_vecs:
+        # No known words, return a zero vector
+        return np.zeros(300)  # 300 if you use 300-dim GloVe vectors
+    else:
+        word_vecs = np.array(word_vecs)
+        return np.mean(word_vecs, axis=0)  # Average instead of sum
+
+
+def main():
+    global model_type
+
+    # Get the model to use
+    if len(sys.argv) < 4:
+        print("Invalid number of arguments!")
+        exit(1)
+    elif len(sys.argv) == 5:
+        match(sys.argv[4]):
+            case "NN" | "SVM":
+                model_type = sys.argv[4]
+            case _:
+                print("Invalid model name")
+                exit(1)
+
+    # Load file data
+    train_filename = sys.argv[1]
+    test_filename = sys.argv[2]
+    glove_filename = sys.argv[3]
+    train_file = open(train_filename, 'r')
+    test_file = open(test_filename, 'r')
+    glove_file = open(glove_filename, 'r')
+
+    train_data = train_file.read()
+    test_data = test_file.read()
+    glove_data = glove_file.read()
+
+    # Get the glove data
+    parse_glove(glove_data)
+
+    # Parse data
+    parser = MyParser()
+    parser.feed(train_data)
+
+    # Convert the parser data to sentences
+    global words
+    sentence = Sentence()
+    creatingSentence = False
+    insideHead = False
+    insideContext = False
+    insideS = False
+    insideAnswer = False
+    for tag in parser.values:
+        if not creatingSentence:
+            if tag == 'instance':
+                creatingSentence = True
+        else:
+            match(tag):
+                # The cases are used to tell which tags we are currently
+                # inside to know where each string should go
+                case 'instance':
+                    # Instance tags surround data
+                    creatingSentence = False
+
+                    # Filter the sentence to remove unnecessary punctuation
+                    # for disambiguation
+                    filtered_sentence = sentence.sentence.translate(
+                            str.maketrans('', '', string.punctuation))
+                    sentence.sentence = filtered_sentence
+                    for word in filtered_sentence.split(' '):
+                        words[word] = True
+
+                    # append sentence to list of sentences
+                    sentences.append(copy.deepcopy(sentence))
+                    sentence.sentence = ""
+                    sentence.word = ""
+                    sentence.answer = ""
+                case 'context':
+                    insideContext = not insideContext
+                case 's':
+                    insideS = not insideS
+                case 'head':
+                    insideHead = not insideHead
+                    insideS = not insideS
+                case 'answer':
+                    insideAnswer = not insideAnswer
+                case _:
+                    if insideAnswer:
+                        # This is where we get the feature
+                        sentence.answer = tag
+                    elif insideS:
+                        # This is where we get the sentence data
+                        sentence.sentence += tag
+                    elif insideHead:
+                        # This is where we get the word to be disambiguated
+                        sentence.word = tag
+                        sentence.sentence += tag
+
+    # Create test sentences
+    test_parser = MyParser()
+    test_parser.values = []
+    test_parser.feed(test_data)
+
+    # Parse the test data and convert it to sentences
+    test_sentences = []
+    test_sentence = Sentence()
+    test_sentence.sentence = ""
+    test_sentence.word = ""
+    test_sentence.answer = ""
+
+    # This is the same as parsing the training data above
+    for tag in test_parser.values:
+        if not creatingSentence:
+            if tag == 'instance':
+                creatingSentence = True
+        else:
+            match(tag):
+                case 'instance':
+                    creatingSentence = False
+                    test_sentences.append(copy.deepcopy(test_sentence))
+                    test_sentence.sentence = ""
+                    test_sentence.word = ""
+                    test_sentence.answer = ""
+                case 'context':
+                    insideContext = not insideContext
+                case 's':
+                    insideS = not insideS
+                case 'head':
+                    insideHead = not insideHead
+                    insideS = not insideS
+                case 'answer':
+                    insideAnswer = not insideAnswer
+                case _:
+                    if insideAnswer:
+                        test_sentence.answer = tag
+                    elif insideS:
+                        test_sentence.sentence += tag
+                    elif insideHead:
+                        test_sentence.word = tag
+                        test_sentence.sentence += tag
+
+    x_train = [sentence_to_vec(s.sentence, glove_dict) for s in sentences]
+    y_train = [s.answer for s in sentences]
+
+    x_test = [sentence_to_vec(s.sentence, glove_dict) for s in test_sentences]
+
+    match(model_type):
+        case "SVM":
+            clf = make_pipeline(StandardScaler(), svm.SVC(kernel='linear', C=1.0))
+
+            # The gaussian naive bayes model needs dense data and without
+            # using toarray() the data would be sparse
+            # It shows that there is an error in my coding environment but
+            # the code runs without issues
+            clf.fit(x_train, y_train)
+
+            predictions = clf.predict(x_test)
+            for prediction in predictions:
+                print(prediction)
+
+        case "NN":
+            print("hello")
+
+
+if __name__ == "__main__":
+    main()
