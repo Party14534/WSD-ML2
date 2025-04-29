@@ -53,11 +53,27 @@ import html.parser
 import copy
 import string
 import sys
+import torch
 from typing import OrderedDict
 from sklearn import svm
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.pipeline import make_pipeline
+from torch import nn
+from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
+
+
+class MyNN(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(MyNN, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
 
 
 class Decision:
@@ -287,7 +303,37 @@ def main():
                 print(prediction)
 
         case "NN":
-            print("hello")
+            label_encoder = LabelEncoder()
+            y_train_encoded = label_encoder.fit_transform(y_train)
+
+            x_train_tensor = torch.tensor(x_train, dtype=torch.float32)
+            y_train_tensor = torch.tensor(y_train_encoded, dtype=torch.long)
+
+            train_dataset = TensorDataset(x_train_tensor, y_train_tensor)
+            train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+
+            model = MyNN(len(x_train[0]), 128, 2)
+            crit = nn.CrossEntropyLoss()
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+            # train the model
+            for epoch in range(20):
+                for x_batch, y_batch in train_loader:
+                    optimizer.zero_grad()
+                    outputs = model(x_batch)
+                    loss = crit(outputs, y_batch)
+                    loss.backward()
+                    optimizer.step()
+
+            # Have the model predict
+            x_test_tensor = torch.tensor(x_test, dtype=torch.float32)
+            outputs = model(x_test_tensor)
+            _, predicted = torch.max(outputs, 1)
+
+            answers = label_encoder.inverse_transform(predicted.numpy())
+
+            for answer in answers:
+                print(answer)
 
 
 if __name__ == "__main__":
