@@ -1,52 +1,36 @@
 """
 Zachariah Dellimore V00980652
 
-Using scikit learn I was able to improve upon my decision list classifier
-accuracy by 10-15% and the models performed much better than the most frequent
-sense baseline which was 52.4%
+Using scikit learn SVM I was able to improve upon my previous scikit learn
+accuracy by ~6% while the pytorch neural network performed ~8% better than my
+previous scikit learn models and the models performed much better than the most
+frequent sense baseline which was 52.4%
 
 Models used
-Gaussian Naive Bayes
-    Accuracy: 87.3015873015873%
+SVM
+    Accuracy: 96.03174603174604%
     Matrix:
               product | phone |
             -------------------
-    product |   50   |   12  |
+    product |   50   |   1  |
             -------------------
-    phone   |   4   |   60  |
+    phone   |   4   |   71  |
 
-    It performed the worst of the models used but still performed much better
-    than my decision list classifier and much better than the most frequent
-    sense baseline.
+    SVM performed better than my previous scikit learn models and it performed
+    worse than the Pytorch Neural Network.
 
-Logisitic Regression
-    Accuracy: 91.26984126984127%
+
+Pytorch Neural Network
+    Accuracy: 99.20634920634922%
     Matrix:
               product | phone |
             -------------------
-    product |   53   |   10  |
+    product |   54   |   1  |
             -------------------
-    phone   |   1   |   62  |
+    phone   |   0   |   71  |
 
-    Logistic Regression tied the MultiLayer Perceptron in performance but
-    also computed much faster. An accuracy of 91% is much higher than
-    my decision list classifier and is much better than the most frequent sense
-    baseline.
-
-MultiLayer Perceptron
-    Accuracy: 91.26984126984127%
-    Matrix:
-              product | phone |
-            -------------------
-    product |   53   |   10  |
-            -------------------
-    phone   |   1   |   62  |
-
-    The MultiLayer Perceptron tied the Logistic Regression model in accuracy
-    but took longer to compute. The accuracy of the model is much higher than
-    my decision list classifier and performed better than the most frequent
-    sense baseline.
-
+    The pytorch neural network performed better than every other model I've
+    used missing only one classification.
 """
 
 import html.parser
@@ -63,6 +47,7 @@ from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 
 
+# Pytorch neural network class
 class MyNN(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(MyNN, self).__init__()
@@ -127,6 +112,7 @@ def valid_tag(tag: str):
     return False
 
 
+# Parses the glove file to get vectors
 def parse_glove(glove: str):
     lines = glove.split('\n')
 
@@ -139,26 +125,30 @@ def parse_glove(glove: str):
         glove_dict[words[0]] = nums
 
 
-# Build feature vectors for train and test
+# Convert sentences to vectors
 def sentence_to_vec(sentence, glove_dict):
     words = sentence.lower().split()
     word_vecs = [glove_dict[word] for word in words if word in glove_dict]
 
+    # Return a zero vector if no words are known
     if not word_vecs:
-        # No known words, return a zero vector
-        return np.zeros(300)  # 300 if you use 300-dim GloVe vectors
+        return np.zeros(300)
     else:
         word_vecs = np.array(word_vecs)
-        return np.mean(word_vecs, axis=0)  # Average instead of sum
+
+        # Return the average of the vectors
+        return np.mean(word_vecs, axis=0)
 
 
 def main():
     global model_type
 
     # Get the model to use
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         print("Invalid number of arguments!")
         exit(1)
+    elif len(sys.argv) == 4:
+        model_type = "SVM"
     elif len(sys.argv) == 5:
         match(sys.argv[4]):
             case "NN" | "SVM":
@@ -283,6 +273,7 @@ def main():
                         test_sentence.word = tag
                         test_sentence.sentence += tag
 
+    # Get data ready for SVM and NN
     x_train = [sentence_to_vec(s.sentence, glove_dict) for s in sentences]
     y_train = [s.answer for s in sentences]
 
@@ -291,11 +282,6 @@ def main():
     match(model_type):
         case "SVM":
             clf = make_pipeline(StandardScaler(), svm.SVC(kernel='linear', C=1.0))
-
-            # The gaussian naive bayes model needs dense data and without
-            # using toarray() the data would be sparse
-            # It shows that there is an error in my coding environment but
-            # the code runs without issues
             clf.fit(x_train, y_train)
 
             predictions = clf.predict(x_test)
@@ -317,7 +303,7 @@ def main():
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
             # train the model
-            for epoch in range(20):
+            for _ in range(20):
                 for x_batch, y_batch in train_loader:
                     optimizer.zero_grad()
                     outputs = model(x_batch)

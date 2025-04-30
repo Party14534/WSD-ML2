@@ -1,6 +1,34 @@
+import html.parser
 import sys
 
-import wsd
+
+# Parser implementation
+class MyParser(html.parser.HTMLParser):
+    values = []
+
+    def handle_starttag(self, tag, attrs):
+        if valid_tag(tag):
+            if tag == 'answer':
+                self.values.append(tag)
+                self.values.append(attrs[1][1])
+            else:
+                self.values.append(tag)
+
+    def handle_endtag(self, tag):
+        self.values.append(tag)
+
+    def handle_data(self, data):
+        self.values.append(data)
+
+
+# Only care about specific tags
+def valid_tag(tag: str):
+    match(tag):
+        case 'answer' | 'instance' | 's' | 'head' | 'context':
+            return True
+
+    return False
+
 
 # Exit if there arent enough arguments
 if len(sys.argv) < 3:
@@ -21,7 +49,7 @@ guesses = guess_data.split('\n')
 answers = []
 
 # Parse the answer file to get the answers
-answer_parser = wsd.MyParser()
+answer_parser = MyParser()
 answer_parser.feed(answer_data)
 for tag in answer_parser.values:
     if tag != 'answer' and tag != '\n':
